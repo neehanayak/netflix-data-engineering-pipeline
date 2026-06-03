@@ -37,7 +37,7 @@ Raw Sources  →  Bronze (Raw)  →  Silver (Cleaned)  →  Gold (Aggregated)
 
 ```
 Netflix Pipeline/
-├── adf/                    # Azure Data Factory pipeline definitions (JSON/ARM)
+├── adf/                    
 ├── databricks/
 │   ├── bronze/             # Ingestion notebooks — raw data landing
 │   ├── silver/             # Transformation notebooks — cleansed layer
@@ -45,7 +45,6 @@ Netflix Pipeline/
 │   └── governance/         # Unity Catalog setup, access policies, lineage configs
 ├── infra/                  # Terraform modules for Azure infrastructure
 ├── data/                   # Sample/seed datasets for local development
-├── tests/                  # pytest unit and integration tests
 └── README.md
 ```
 
