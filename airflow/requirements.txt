@@ -1,0 +1,8 @@
+# Airflow core — pin to match the image version in docker-compose.yml
+apache-airflow==2.9.0
+
+# Databricks provider — DatabricksRunNowOperator, DatabricksSubmitRunOperator
+apache-airflow-providers-databricks
+
+# Azure provider — ADF operators, ADLS hooks, Azure Key Vault secrets backend
+apache-airflow-providers-microsoft-azure

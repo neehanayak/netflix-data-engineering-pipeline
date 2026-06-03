@@ -1,0 +1,129 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Netflix Data Pipeline — Local Airflow Stack
+# ─────────────────────────────────────────────────────────────────────────────
+# Services
+#   postgres         → stores Airflow metadata (DAG runs, task states, XCom)
+#   airflow-init     → one-shot: initialises the DB and creates the admin user
+#   airflow-scheduler→ reads DAGs, schedules tasks, marks them queued/running
+#   airflow-webserver→ UI at http://localhost:8080  (admin / admin)
+#
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Logs:   docker compose logs -f airflow-webserver
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-airflow-common:
+  # Shared config block — both the scheduler and webserver inherit this so we
+  # only have to write environment variables, volumes and dependencies once.
+  &airflow-common
+  image: apache/airflow:2.9.0
+  environment:
+    &airflow-common-env
+
+    # ── Core ────────────────────────────────────────────────────────────────
+    # LocalExecutor runs tasks as subprocesses on the same machine.
+    # No Redis or Celery workers needed — perfect for local development.
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+
+    # Fernet key encrypts sensitive connection passwords stored in the DB.
+    # Generate your own with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    AIRFLOW__CORE__FERNET_KEY: ""
+
+    # Suppress the example DAGs that ship with Airflow — keeps the UI clean.
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+
+    # ── Database ─────────────────────────────────────────────────────────────
+    # Points Airflow at the Postgres container defined below.
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+
+    # ── Webserver ────────────────────────────────────────────────────────────
+    # Secret key for Flask sessions — change this for any non-local deployment.
+    AIRFLOW__WEBSERVER__SECRET_KEY: "netflix-pipeline-secret"
+
+    # ── Extra pip packages ───────────────────────────────────────────────────
+    # Airflow will install these on container start using the constraints file.
+    # Listed in airflow/requirements.txt and passed in via the volume mount.
+    _PIP_ADDITIONAL_REQUIREMENTS: ""
+
+  volumes:
+    # DAGs folder — edit files locally and Airflow picks them up automatically.
+    - ./airflow/dags:/opt/airflow/dags
+    # Custom operators / hooks go here.
+    - ./airflow/plugins:/opt/airflow/plugins
+    # Persists task logs between container restarts.
+    - airflow-logs:/opt/airflow/logs
+
+  depends_on:
+    postgres:
+      condition: service_healthy   # wait until Postgres passes its health check
+
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+
+  # ── Postgres ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      # Named volume so the database survives docker compose down / up.
+      - postgres-db:/var/lib/postgresql/data
+    healthcheck:
+      # Airflow services won't start until this passes.
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # ── Init (runs once, then exits) ───────────────────────────────────────────
+  airflow-init:
+    <<: *airflow-common
+    # Run as root briefly so the entrypoint can fix file permissions, then
+    # Airflow drops back to the airflow user for the actual commands.
+    user: "0:0"
+    command: bash -c "airflow db migrate && airflow users create -u admin -p admin -f Admin -l User -r Admin -e admin@example.com"
+    environment:
+      <<: *airflow-common-env
+    restart: "no"   # run once and exit — don't restart on finish
+
+  # ── Scheduler ──────────────────────────────────────────────────────────────
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    environment:
+      <<: *airflow-common-env
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully   # wait for DB init to finish
+
+  # ── Webserver ──────────────────────────────────────────────────────────────
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"   # UI available at http://localhost:8080
+    environment:
+      <<: *airflow-common-env
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  postgres-db:    # persists the Airflow metadata database
+  airflow-logs:   # persists task execution logs

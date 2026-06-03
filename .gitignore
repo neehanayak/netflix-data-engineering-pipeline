@@ -1,0 +1,22 @@
+# Large data files
+data/ratings.csv
+data/genome-scores.csv
+data/genome-tags.csv
+data/tags.csv
+data/movies.csv
+data/links.csv
+
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/.terraform.lock.hcl
+infra/terraform.tfvars
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Airflow
+airflow/logs/
